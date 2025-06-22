@@ -9,7 +9,7 @@ from eth_account.messages import encode_defunct
 from eth_utils import to_hex
 from datetime import datetime, timezone
 from colorama import *
-import asyncio, random, json, os, pytz
+import asyncio, random, uuid, json, os, pytz
 
 wib = pytz.timezone('Asia/Jakarta')
 
@@ -205,7 +205,7 @@ class Cicada:
                     return await response.json()
         except (Exception, ClientResponseError) as e:
             self.log(
-                f"{Fore.CYAN+Style.BRIGHT}Status :{Style.RESET_ALL}"
+                f"{Fore.CYAN+Style.BRIGHT}Status    :{Style.RESET_ALL}"
                 f"{Fore.RED+Style.BRIGHT} Connection Not 200 OK {Style.RESET_ALL}"
                 f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
                 f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
@@ -283,7 +283,7 @@ class Cicada:
             try:
                 async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
                     async with session.post(url=url, headers=headers, ssl=False) as response:
-                        if response.status == 400:
+                        if response.status in [400, 403]:
                             return None
                         response.raise_for_status()
                         return await response.json()
@@ -440,7 +440,7 @@ class Cicada:
                     title = task.get("title")
                     reward = task.get("points")
 
-                    added = await self.add_points(address, task_id, proxy)
+                    added = await self.add_points(address, task_id, title, proxy)
                     if added:
                         self.log(
                             f"{Fore.MAGENTA+Style.BRIGHT}   ● {Style.RESET_ALL}"
@@ -497,8 +497,6 @@ class Cicada:
                             "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
                             "Origin": "https://campaign.cicada.finance",
                             "Privy-App-Id": "cltgsatvl0uwg126o8osk48a3",
-                            "Privy-Ca-Id": "5100e990-beb5-47ac-9bed-e9883b6f3b96",
-                            "Privy-Client": "react-auth:2.7.0",
                             "Privy-Client-Id": "client-WY2ifxw6VQBxyc2wm9qFMambiP3khbmE57s6Dov2WVpDA",
                             "Refrer": "https://campaign.cicada.finance/",
                             "Sec-Fetch-Dest": "empty",
