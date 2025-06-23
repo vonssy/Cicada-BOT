@@ -328,7 +328,7 @@ class Cicada:
             
         return None
     
-    async def add_points(self, address: str, task_id: int, title: str, proxy=None, retries=5):
+    async def add_points(self, address: str, task_id: int, proxy=None, retries=5):
         url = f"{self.BASE_API}/points/add"
         data = json.dumps({"taskId":task_id})
         headers = {
@@ -346,8 +346,8 @@ class Cicada:
                     async with session.post(url=url, headers=headers, data=data, ssl=False) as response:
                         if response.status == 409:
                             self.log(
-                                f"{Fore.MAGENTA+Style.BRIGHT}   ● {Style.RESET_ALL}"
-                                f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                f"{Fore.CYAN+Style.BRIGHT}     > {Style.RESET_ALL}"
+                                f"{Fore.BLUE+Style.BRIGHT}Status:{Style.RESET_ALL}"
                                 f"{Fore.YELLOW+Style.BRIGHT} Already Completed {Style.RESET_ALL}"
                             )
                             return None
@@ -358,9 +358,48 @@ class Cicada:
                     await asyncio.sleep(5)
                     continue
                 self.log(
-                    f"{Fore.MAGENTA+Style.BRIGHT}   ● {Style.RESET_ALL}"
-                    f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                    f"{Fore.CYAN+Style.BRIGHT}     > {Style.RESET_ALL}"
+                    f"{Fore.BLUE+Style.BRIGHT}Status:{Style.RESET_ALL}"
                     f"{Fore.RED+Style.BRIGHT} Not Completed {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
+                    f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
+                )
+            
+        return None
+    
+    async def gems_credit(self, address: str, task_id: int, proxy=None, retries=5):
+        url = f"{self.BASE_API}/gems/credit"
+        data = json.dumps({"transactionType":"TASK", "options":{"taskId":task_id}})
+        headers = {
+            **self.BASE_HEADERS[address],
+            "Authorization": f"Bearer {self.access_tokens[address]}",
+            "Content-Length": str(len(data)),
+            "Content-Type": "application/json",
+            "Cookie": self.header_cookies[address]
+        }
+        await asyncio.sleep(3)
+        for attempt in range(retries):
+            connector = ProxyConnector.from_url(proxy) if proxy else None
+            try:
+                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
+                    async with session.post(url=url, headers=headers, data=data, ssl=False) as response:
+                        if response.status == 409:
+                            self.log(
+                                f"{Fore.CYAN+Style.BRIGHT}     > {Style.RESET_ALL}"
+                                f"{Fore.BLUE+Style.BRIGHT}Gems  :{Style.RESET_ALL}"
+                                f"{Fore.YELLOW+Style.BRIGHT} No Reward {Style.RESET_ALL}"
+                            )
+                            return None
+                        response.raise_for_status()
+                        return await response.json()
+            except (Exception, ClientResponseError) as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(5)
+                    continue
+                self.log(
+                    f"{Fore.CYAN+Style.BRIGHT}     > {Style.RESET_ALL}"
+                    f"{Fore.BLUE+Style.BRIGHT}Gems  :{Style.RESET_ALL}"
+                    f"{Fore.RED+Style.BRIGHT} No Reward {Style.RESET_ALL}"
                     f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
                 )
@@ -440,15 +479,32 @@ class Cicada:
                     title = task.get("title")
                     reward = task.get("points")
 
-                    added = await self.add_points(address, task_id, title, proxy)
+                    self.log(
+                        f"{Fore.MAGENTA+Style.BRIGHT}   ● {Style.RESET_ALL}"
+                        f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                    )
+
+                    added = await self.add_points(address, task_id, proxy)
                     if added:
                         self.log(
-                            f"{Fore.MAGENTA+Style.BRIGHT}   ● {Style.RESET_ALL}"
-                            f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                            f"{Fore.GREEN+Style.BRIGHT} Is Completed {Style.RESET_ALL}"
-                            f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
-                            f"{Fore.CYAN+Style.BRIGHT} Reward: {Style.RESET_ALL}"
-                            f"{Fore.WHITE+Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
+                            f"{Fore.CYAN+Style.BRIGHT}     > {Style.RESET_ALL}"
+                            f"{Fore.BLUE+Style.BRIGHT}Status:{Style.RESET_ALL}"
+                            f"{Fore.GREEN+Style.BRIGHT} Completed {Style.RESET_ALL}"
+                        )
+                        self.log(
+                            f"{Fore.CYAN+Style.BRIGHT}     > {Style.RESET_ALL}"
+                            f"{Fore.BLUE+Style.BRIGHT}Point :{Style.RESET_ALL}"
+                            f"{Fore.WHITE+Style.BRIGHT} {reward} {Style.RESET_ALL}"
+                        )
+
+                    gems = await self.gems_credit(address, task_id, proxy)
+                    if gems:
+                        credit = gems.get("credit", 0)
+
+                        self.log(
+                            f"{Fore.CYAN+Style.BRIGHT}     > {Style.RESET_ALL}"
+                            f"{Fore.BLUE+Style.BRIGHT}Gems  :{Style.RESET_ALL}"
+                            f"{Fore.WHITE+Style.BRIGHT} {credit} {Style.RESET_ALL}"
                         )
 
     async def main(self):
