@@ -35,9 +35,11 @@ class Cicada:
     def __init__(self) -> None:
         self.PRIVY_HEADERS = {}
         self.BASE_HEADERS = {}
-        self.PRIVY_API = "https://auth.privy.io/api/v1/siwe"
+        self.PRIVY_API = "https://auth.privy.io"
         self.BASE_API = "https://campaign.cicada.finance/api"
         self.REF_CODE = "ePwzamlQ" # U can change it with yours.
+        self.SITE_KEY = "0x4AAAAAAAM8ceq5KhP1uJBt"
+        self.CAPTCHA_KEY = None
         self.proxies = []
         self.proxy_index = 0
         self.account_proxies = {}
@@ -70,6 +72,15 @@ class Cicada:
         hours, remainder = divmod(seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
         return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
+    
+    def load_2captcha_key(self):
+        try:
+            with open("2captcha_key.txt", 'r') as file:
+                captcha_key = file.read().strip()
+
+            return captcha_key
+        except Exception as e:
+            return None
     
     async def load_proxies(self, use_proxy_choice: bool):
         filename = "proxy.txt"
@@ -196,6 +207,58 @@ class Cicada:
 
         return choose, rotate
     
+    async def solve_cf_turnstile(self, proxy=None, retries=5):
+        for attempt in range(retries):
+            connector = ProxyConnector.from_url(proxy) if proxy else None
+            try:
+                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
+
+                    if self.CAPTCHA_KEY is None:
+                        return None
+                    
+                    url = f"http://2captcha.com/in.php?key={self.CAPTCHA_KEY}&method=turnstile&sitekey={self.SITE_KEY}&pageurl={self.PRIVY_API}"
+                    async with session.get(url=url) as response:
+                        response.raise_for_status()
+                        result = await response.text()
+
+                        if 'OK|' not in result:
+                            await asyncio.sleep(5)
+                            continue
+
+                        request_id = result.split('|')[1]
+
+                        self.log(
+                            f"{Fore.MAGENTA+Style.BRIGHT} ● {Style.RESET_ALL}"
+                            f"{Fore.BLUE+Style.BRIGHT}Req Id  :{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {request_id} {Style.RESET_ALL}"
+                        )
+
+                        for _ in range(30):
+                            res_url = f"http://2captcha.com/res.php?key={self.CAPTCHA_KEY}&action=get&id={request_id}"
+                            async with session.get(url=res_url) as res_response:
+                                res_response.raise_for_status()
+                                res_result = await res_response.text()
+
+                                if 'OK|' in res_result:
+                                    turnstile_token = res_result.split('|')[1]
+                                    return turnstile_token
+                                elif res_result == "CAPCHA_NOT_READY":
+                                    self.log(
+                                        f"{Fore.MAGENTA+Style.BRIGHT} ● {Style.RESET_ALL}"
+                                        f"{Fore.BLUE+Style.BRIGHT}Message :{Style.RESET_ALL}"
+                                        f"{Fore.YELLOW + Style.BRIGHT} Captcha Not Ready {Style.RESET_ALL}"
+                                    )
+                                    await asyncio.sleep(5)
+                                    continue
+                                else:
+                                    break
+
+            except Exception as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(5)
+                    continue
+                return None
+    
     async def check_connection(self, proxy=None):
         connector = ProxyConnector.from_url(proxy) if proxy else None
         try:
@@ -212,9 +275,9 @@ class Cicada:
             )
             return None
         
-    async def init(self, address: str, proxy=None, retries=5):
-        url = f"{self.PRIVY_API}/init"
-        data = json.dumps({"address":address})
+    async def init(self, address: str, turnstile_token: str, proxy=None, retries=5):
+        url = f"{self.PRIVY_API}/api/v1/siwe/init"
+        data = json.dumps({"address":address, "token":turnstile_token})
         headers = {
             **self.PRIVY_HEADERS[address],
             "Content-Length": str(len(data)),
@@ -233,7 +296,8 @@ class Cicada:
                     await asyncio.sleep(5)
                     continue
                 self.log(
-                    f"{Fore.CYAN+Style.BRIGHT}Status    :{Style.RESET_ALL}"
+                    f"{Fore.MAGENTA+Style.BRIGHT} ● {Style.RESET_ALL}"
+                    f"{Fore.BLUE+Style.BRIGHT}Status  :{Style.RESET_ALL}"
                     f"{Fore.RED+Style.BRIGHT} GET Nonce Failed {Style.RESET_ALL}"
                     f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
@@ -242,7 +306,7 @@ class Cicada:
         return None
     
     async def authenticate(self, account: str, address: str, nonce: str, proxy=None, retries=5):
-        url = f"{self.PRIVY_API}/authenticate"
+        url = f"{self.PRIVY_API}/api/v1/siwe/authenticate"
         data = json.dumps(self.generate_payload(account, address, nonce))
         headers = {
             **self.PRIVY_HEADERS[address],
@@ -262,7 +326,8 @@ class Cicada:
                     await asyncio.sleep(5)
                     continue
                 self.log(
-                    f"{Fore.CYAN+Style.BRIGHT}Status    :{Style.RESET_ALL}"
+                    f"{Fore.MAGENTA+Style.BRIGHT} ● {Style.RESET_ALL}"
+                    f"{Fore.BLUE+Style.BRIGHT}Status  :{Style.RESET_ALL}"
                     f"{Fore.RED+Style.BRIGHT} Login Failed {Style.RESET_ALL}"
                     f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
@@ -430,11 +495,31 @@ class Cicada:
         if is_valid:
             proxy = self.get_next_proxy_for_account(address) if use_proxy else None
 
-            init = await self.init(address, proxy)
-            if init:
-                nonce = init["nonce"]
-                return nonce
+            self.log(
+                f"{Fore.MAGENTA+Style.BRIGHT} ● {Style.RESET_ALL}"
+                f"{Fore.YELLOW+Style.BRIGHT}Solving Captcha Turnstile...{Style.RESET_ALL}"
+            )
 
+            turnstile_token = await self.solve_cf_turnstile(proxy)
+            if turnstile_token:
+                self.log(
+                    f"{Fore.MAGENTA+Style.BRIGHT} ● {Style.RESET_ALL}"
+                    f"{Fore.BLUE+Style.BRIGHT}Message :{Style.RESET_ALL}"
+                    f"{Fore.GREEN+Style.BRIGHT} Captcha Turnstile Solved Successfully {Style.RESET_ALL}"
+                )
+
+                init = await self.init(address, turnstile_token, proxy)
+                if init:
+                    nonce = init["nonce"]
+                    return nonce
+
+                return False
+            
+            self.log(
+                f"{Fore.MAGENTA+Style.BRIGHT} ● {Style.RESET_ALL}"
+                f"{Fore.BLUE+Style.BRIGHT}Message :{Style.RESET_ALL}"
+                f"{Fore.RED+Style.BRIGHT} Captcha Turnstile Not Solved {Style.RESET_ALL}"
+            )
             return False
 
     async def process_user_login(self, account: str, address: str, use_proxy: bool, rotate_proxy: bool):
@@ -450,8 +535,9 @@ class Cicada:
                 self.header_cookies[address] = f"privy-token={self.access_tokens[address]}; privy-id-token={self.identity_tokens[address]}"
 
                 self.log(
-                    f"{Fore.CYAN+Style.BRIGHT}Status    :{Style.RESET_ALL}"
-                    f"{Fore.GREEN + Style.BRIGHT} Login Success {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA+Style.BRIGHT} ● {Style.RESET_ALL}"
+                    f"{Fore.BLUE+Style.BRIGHT}Status  :{Style.RESET_ALL}"
+                    f"{Fore.RED+Style.BRIGHT} Login Success {Style.RESET_ALL}"
                 )
                 return True
 
@@ -511,6 +597,10 @@ class Cicada:
         try:
             with open('accounts.txt', 'r') as file:
                 accounts = [line.strip() for line in file if line.strip()]
+
+            capctha_key = self.load_2captcha_key()
+            if capctha_key:
+                self.CAPTCHA_KEY = capctha_key
 
             use_proxy_choice, rotate_proxy = self.print_question()
 
@@ -574,10 +664,11 @@ class Cicada:
                         }
 
                         await self.process_accounts(account, address, use_proxy, rotate_proxy)
+                        await asyncio.sleep(3)
 
                 self.log(f"{Fore.CYAN + Style.BRIGHT}={Style.RESET_ALL}"*72)
                 
-                delay = 12 * 60 * 60
+                delay = 24 * 60 * 60
                 while delay > 0:
                     formatted_time = self.format_seconds(delay)
                     print(

@@ -18,6 +18,7 @@ Cicada Finance BOT
 ## Requiremnets
 
 - Make sure you have Python3.9 or higher installed and pip.
+- 2captcha key
 
 ## Instalation
 
@@ -54,6 +55,12 @@ Cicada Finance BOT
   ```bash
     your_private_key_1
     your_private_key_2
+  ```
+
+- **2captcha_key.txt:** You will find the file `2captcha_key.txt` inside the project directory. Make sure `2captcha_key.txt` contains data that matches the format expected by the script. Here are examples of file formats:
+
+  ```bash
+    your_2captcha_key
   ```
 
 - **proxy.txt:** You will find the file `proxy.txt` inside the project directory. Make sure `proxy.txt` contains data that matches the format expected by the script. Here are examples of file formats:
