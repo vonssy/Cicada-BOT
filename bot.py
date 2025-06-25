@@ -537,7 +537,7 @@ class Cicada:
                 self.log(
                     f"{Fore.MAGENTA+Style.BRIGHT} ● {Style.RESET_ALL}"
                     f"{Fore.BLUE+Style.BRIGHT}Status  :{Style.RESET_ALL}"
-                    f"{Fore.RED+Style.BRIGHT} Login Success {Style.RESET_ALL}"
+                    f"{Fore.GREEN+Style.BRIGHT} Login Success {Style.RESET_ALL}"
                 )
                 return True
 
